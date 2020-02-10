@@ -1,0 +1,253 @@
+<!doctype html>
+<html ng-app="frtSocketIOChatClient">
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <title>Firat's Sample Chat App (w/ Node.js & Socket.io & AngularJS)</title>
+
+    <script src="https://ajax.googleapis.com/ajax/libs/angularjs/1.4.9/angular.min.js"></script>
+    <script src="http://code.jquery.com/jquery-latest.min.js" type="text/javascript"></script>
+    <!-- <script src="https://cdn.socket.io/socket.io-1.4.5.js"></script> -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/2.3.0/socket.io.js"></script>
+
+    <style>
+        html, body {
+            height: calc(100% - 9px);
+            overflow: hidden;
+        }
+    </style>
+
+<script>
+// HELPER FUNCTIONS
+//var log = console.log;
+function getScopeOfCtrl(ctrlName) { return angular.element(document.querySelector("[ng-controller=" + ctrlName + "]")).scope(); }
+function applyToCtrlScope(ctrlName, fn) { getScopeOfCtrl(ctrlName).$applyAsync(fn); }
+
+// SOCKET EVENTS
+var socket;
+//var socket = io();
+function bindSocketEvents($scope, $timeout) {
+    socket.on('myNewConnection', function (data) {
+        console.log(data);
+        var thisChatInfo = {
+            chatId: data.chatId,
+            userId: data.userId,
+            userName: $scope.userName
+        };
+        // put chat info to local storage logic (to be able to restore userId on re-connect) (BUT only for the same chat session)
+        if (typeof localStorage.myPrevChatInfo === "undefined") {
+            localStorage.myPrevChatInfo = JSON.stringify(thisChatInfo); // update local storage
+        } else {
+            var prevChatInfo = JSON.parse(localStorage.myPrevChatInfo); //console.log("prevChatInfo:", prevChatInfo);
+            if (prevChatInfo.chatId === data.chatId) { // IT MEANS; we have been to this chat session before
+                data.userId = prevChatInfo.userId; // SO; we restore the previous userId (to be able to own our previous messages on the chat)
+                prevChatInfo.userName = $scope.userName;
+                localStorage.myPrevChatInfo = JSON.stringify(prevChatInfo); // update prevChatInfo's user name only (in case user may enter a different name)
+            } else { // we have been to a chat before BUT this is a complete new chat session
+                localStorage.myPrevChatInfo = JSON.stringify(thisChatInfo); // update local storage again
+            }
+        }
+        applyToCtrlScope('mySocketIOClientCtrl', function (scope) {
+            scope.me = {
+                id: data.userId,
+                userName: $scope.userName
+            };
+            socket.emit('addUser', scope.me);
+        });
+    });
+
+    socket.on('newConnection', function (data) {
+        console.log(data);
+    });
+
+    socket.on('addTyper', function (who) {
+        //console.log(who);
+        applyToCtrlScope('mySocketIOClientCtrl', function (scope) {
+            scope.typers.push(who);
+        });
+    });
+
+    socket.on('removeTyper', function (who) {
+        //console.log(who);
+        applyToCtrlScope('mySocketIOClientCtrl', function (scope) {
+            var foundIndex;
+            for (var i = 0; i < scope.typers.length; i++) {
+                if (scope.typers[i].id == who.id) { foundIndex = i; }
+            }
+            scope.typers.splice(foundIndex, 1); // delete typer from the list
+        });
+    });
+
+    socket.on('messageList', function (data) {
+        console.log(data);
+        applyToCtrlScope('mySocketIOClientCtrl', function (scope) {
+            scope.messages = data.messages;
+            $timeout(function () { $("#messages-wrapper").scrollTop(1000000000); });
+        });
+    });
+
+    socket.on('userList', function (data) {
+        console.log(data);
+        applyToCtrlScope('mySocketIOClientCtrl', function (scope) {
+            scope.userList = data.userList;
+        });
+    });
+}
+
+// ANGULAR JS APP
+var app = angular.module("frtSocketIOChatClient", []).controller("mySocketIOClientCtrl", ["$scope", "$timeout", function ($scope, $timeout) {
+
+    $scope.typers = []; // list of typing users
+
+    $scope.step = 1;
+    if (typeof localStorage.myPrevChatInfo !== "undefined") {
+        var prevChatInfo = JSON.parse(localStorage.myPrevChatInfo); console.log("prevChatInfo:", prevChatInfo);
+        $scope.userName = prevChatInfo.userName;
+    }
+    $("input[ng-model=userName]").focus();
+    $scope.letMeIn = function () {
+        if (!$scope.userName) { return; }
+        //console.log("letMeIn function fired!");
+
+        socket = io(); // initialize my socket connection
+        if (socket) bindSocketEvents($scope, $timeout); // if socket was initialized properly, bind socket event handlers
+
+        $scope.step = 2;
+        $scope.messageText = '';
+        $timeout(function () { $("input[ng-model=messageText]").focus(); });
+    }
+
+    // my typing status controls
+    var typing = false, typingTimeout;
+    function myTypingStarted() { // switch to typing=true state
+        typing = true;
+        socket.emit('typingStarted', $scope.me);
+    }
+    function myTypingCountinues() { // renew the timeout (extend it)
+        $timeout.cancel(typingTimeout);
+        typingTimeout = $timeout(myTypingEnded, 6000);
+    }
+    function myTypingEnded() { // switch to typing=false state & clear the timeout & announce to others that your typing is ended
+        typing = false;
+        $timeout.cancel(typingTimeout);
+        socket.emit('typingEnded', $scope.me);
+    }
+    $scope.messageBoxKeydown = function (e) {
+        //console.log(e);
+        if (e.which != 13) {
+            if (!typing) {
+                myTypingStarted();
+            }
+            myTypingCountinues();
+        } else { // enter key press
+            $scope.messageSend();
+        }
+    }
+
+    $scope.messageSend = function () {
+        if (!$scope.messageText) { return; }
+
+        socket.emit('messageSent', {
+            senderUserName: $scope.me.userName,
+            senderUserId: $scope.me.id,
+            messageText: $scope.messageText,
+            messageTimestamp: Date.now()
+        });
+        $scope.messageText = null;
+
+        // messageSend means typingEnded too, so clear typing state
+        myTypingEnded();
+    }
+
+    $scope.exitChat = function () {
+		if(confirm("Seriously!? U wanna get outta the room ?\n\nC'moon! We're cool as hell man! 😎")){
+		    myTypingEnded(); // to fix bug on exiting room while you're typing
+			socket.disconnect();
+			$scope.step = 1;
+            var prevChatInfo = JSON.parse(localStorage.myPrevChatInfo);
+            $scope.userName = prevChatInfo.userName || '';
+			$timeout(function () { $("input[ng-model=userName]").focus(); });
+		}
+    }
+
+}]);
+
+</script>
+
+</head>
+
+<body ng-controller="mySocketIOClientCtrl" ng-cloak style="font-family: Lucida Sans Unicode, Lucida Grande, sans-serif;">
+
+    <div ng-show="step == 1" style="text-align:center;">
+
+        <h2>Firat's Sample Chat App (w/ Node.js & Socket.io & AngularJS)</h2>
+
+        <p>Enter a user name and get into the chat room!</p>
+
+        <input type="text" ng-model="userName" placeholder="Enter Your Username" style="width:200px; height:30px;" ng-keypress="$event.which==13 ? letMeIn() : ''" />
+        <br />
+        <input type="button" ng-click="letMeIn()" value="Get Into the Chat Room" style="width:200px; height:40px; margin-top:5px;" />
+
+    </div>
+
+    <div ng-show="step == 2" style="height:100%;">
+
+        <div id="left-div" style="float:left; width:calc((100% - 8px)*.7); height:100%; background:#cee0d6; padding:6px; box-sizing:border-box; border-radius:6px;">
+		
+			<div>
+                <b>ME:</b> {{me.userName}} (#{{me.id}})
+                <button style="float:right;" ng-click="exitChat()">Exit</button>
+            </div>
+
+            <h3>MESSAGES ({{messages.length}})</h3>
+            <div id="messages-wrapper" style="overflow-y:auto; height:calc(100% - 138px);">
+                <table cellpadding="4" style="width:100%; font-size:14px;">
+                    <tr>
+                        <th style="text-align:left;">Sender</th>
+                        <th style="text-align:left;">Message</th>
+                        <th style="width:175px;">Send Time</th>
+                    </tr>
+                    <tr ng-repeat="m in messages">
+                        <td style="font-weight:bold;">
+							<span style="color:mediumblue;" ng-if="m.senderUserId!=me.id">{{m.senderUserName}} (#{{m.senderUserId}})</span>
+							<span style="color:green;" ng-if="m.senderUserId==me.id">Me</span>
+						</td>
+                        <td ng-style="{'text-align': m.senderUserId!=me.id ? 'left' : 'right'}">
+							<span style="display: inline-block; padding: 4px 8px; border-radius: 10px;" ng-style="{'background-color': m.senderUserId==me.id ? 'lightskyblue' : 'lavenderblush' }">{{m.messageText}}</span>
+						</td>
+                        <td style="text-align:center;">{{m.messageTimestamp | date:'MMM d, y h:mm a'}}</td>
+                    </tr>
+                </table>
+            </div>
+
+            <div style="font-size:11px; color:gray; padding:0px 3px;" ng-show="typers.length > 0">
+                <span>{{typers[0].userName}}{{typers.length > 2 ? ',' : ''}}</span>
+                <span ng-if="typers.length == 2"> and {{typers[1].userName}} </span> 
+                <span ng-if="typers.length > 2"> {{typers[1].userName}} and {{typers.length-2}} other{{typers.length-2 > 1 ? 's' : ''}} </span> 
+                {{typers.length > 1 ? 'are' : 'is'}} typing...
+            </div>
+			
+			<input type="text" ng-model="messageText" placeholder="Your Message" style="width:calc(69% - 35px); padding:4px; position:absolute; bottom:16px;" ng-keydown="messageBoxKeydown($event)" />
+            <input type="button" ng-click="messageSend()" value="Send" style="position:absolute; bottom:19px; left:calc(69% - 58px);" />
+        </div>
+
+        <div style="float:left; width:8px; height:100%;"></div>
+
+        <div style="float:left; width:calc((100% - 8px)*.3); height:100%; background:#c6dff1; text-align:center; border-radius:6px;">
+            <h3>USERS ({{userList.length}})</h3>
+            <table cellpadding="4" style="display:inline-block;">
+                <tr>
+                    <th>User</th>
+                </tr>
+                <tr ng-repeat="u in userList">
+                    <td>{{u.userName}} (#{{u.id}}) <span ng-if="u.id==me.id" style="color:green; font-weight:bold;">(Me)</span></td>
+                </tr>
+            </table>
+        </div>
+
+        <div style="clear:both;"></div>
+
+    </div>
+
+</body>
+
+</html>
