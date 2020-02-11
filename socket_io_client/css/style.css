@@ -1,0 +1,77 @@
+html, body {
+    height: calc(100% - 9px);
+    overflow: hidden;
+    font-family: Lucida Sans Unicode, Lucida Grande, sans-serif;
+}
+
+.left {
+    float: left;
+}
+
+.right {
+    float: right;
+}
+
+.clear {
+    clear: both;
+}
+
+body div.step1-wrapper {
+    text-align: center;
+}
+
+body div.step1-wrapper input[name='tbx-username'] {
+    width: 200px;
+    height: 30px;
+}
+
+body div.step1-wrapper input[name='btn-letmein'] {
+    width: 200px;
+    height: 40px;
+    margin-top: 5px;
+}
+
+body div.step2-wrapper {
+    height: 100%;
+}
+
+body div.step2-wrapper #left-div {
+    float: left;
+    width: calc((100% - 8px) * .7);
+    height: 100%;
+    background: #cee0d6;
+    padding: 6px;
+    box-sizing: border-box;
+    border-radius: 6px;
+}
+
+body div.step2-wrapper #left-div #messages-wrapper {
+    overflow-y: auto;
+    height: calc(100% - 138px);
+}
+
+body div.step2-wrapper #left-div #messages-wrapper > table {
+    width: 100%;
+    font-size: 14px;
+}
+
+body div.step2-wrapper #left-div #typers-wrapper {
+    font-size: 11px;
+    color: gray;
+    padding: 0px 3px;
+}
+
+body div.step2-wrapper #middle-separator {
+    float: left;
+    width: 8px;
+    height: 100%;
+}
+
+body div.step2-wrapper #users-wrapper {
+    float: left;
+    width: calc((100% - 8px) * .3);
+    height: 100%;
+    background: #c6dff1;
+    text-align: center;
+    border-radius: 6px;
+}

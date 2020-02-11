@@ -8,7 +8,8 @@ var serv = require('http').Server(app);
 app.get('/', function (req, res) {
     res.sendFile(__dirname + '/socket_io_client/index.html');
 });
-app.use('/client', express.static(__dirname + '/client'));
+app.use('/css', express.static(__dirname + '/socket_io_client/css'));
+app.use('/js', express.static(__dirname + '/socket_io_client/js'));
 
 serv.listen(3000, function () {
     console.log('Frt Sample Chat App is listening on port 3000!');
